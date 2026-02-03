@@ -4,11 +4,110 @@ import re
 import time
 import pyperclip
 import json
+import difflib
 from build_logic import create_react_vite, create_python_project
 from deploy_logic import push_to_github, check_git_status
 from editor_logic import open_folder_in_vscode, open_vscode_at_file, write_to_file
 
 st.set_page_config(page_title="DevStack", page_icon="⚡", layout="centered")
+
+
+def find_precise_block_range(existing_lines, clipboard_body):
+    if not clipboard_body:
+        return -1, -1
+
+    first_clip_line = clipboard_body[0].strip()
+    match_indices = []
+
+    for idx, ex_line in enumerate(existing_lines):
+        if first_clip_line in ex_line:
+            match_indices.append(idx)
+
+    best_start = -1
+    best_end = -1
+    max_matches = -1
+
+    for start_idx in match_indices:
+        current_matches = 0
+        temp_idx = start_idx
+
+        for clip_line in clipboard_body:
+            if temp_idx < len(existing_lines):
+                if clip_line.strip() in existing_lines[temp_idx].strip():
+                    current_matches += 1
+                temp_idx += 1
+            else:
+                break
+
+        if current_matches > max_matches:
+            max_matches = current_matches
+            best_start = start_idx
+            best_end = start_idx + len(clipboard_body) - 1
+            if best_end >= len(existing_lines):
+                best_end = len(existing_lines) - 1
+
+    return best_start, best_end
+
+
+def get_simple_compare(clip_txt, file_txt, file_ext):
+    clip_lines = clip_txt.splitlines()
+    file_lines = file_txt.splitlines()
+
+    matcher = difflib.SequenceMatcher(None, clip_lines, file_lines)
+    left_display = []
+    right_display = []
+
+    # Logika deteksi tag untuk file TSX/JSX/HTML
+    is_markup = file_ext in ['tsx', 'jsx', 'html', 'xml']
+
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == 'equal':
+            for i in range(i1, i2):
+                left_display.append(f"✅ {clip_lines[i]}")
+            for j in range(j1, j2):
+                right_display.append(f"✅ {file_lines[j]}")
+
+        elif tag == 'replace':
+            for i in range(i1, i2):
+                c_line = clip_lines[i]
+                found_match = False
+
+                # Jika file markup, coba samakan berdasarkan Tag (<Component> atau <div>)
+                if is_markup:
+                    clip_tags = regex.findall(r'<([\w\d.-]+)', c_line)
+                    for f_line in file_lines[j1:j2]:
+                        file_tags = regex.findall(r'<([\w\d.-]+)', f_line)
+                        if clip_tags and file_tags and clip_tags[0] == file_tags[0]:
+                            left_display.append(f"✅ {c_line}")
+                            found_match = True
+                            break
+
+                if not found_match:
+                    left_display.append(f"📝 {c_line}")
+
+            for j in range(j1, j2):
+                f_line = file_lines[j]
+                found_match = False
+                if is_markup:
+                    file_tags = regex.findall(r'<([\w\d.-]+)', f_line)
+                    for c_line in clip_lines[i1:i2]:
+                        clip_tags = regex.findall(r'<([\w\d.-]+)', c_line)
+                        if clip_tags and file_tags and clip_tags[0] == file_tags[0]:
+                            right_display.append(f"✅ {f_line}")
+                            found_match = True
+                            break
+
+                if not found_match:
+                    right_display.append(f"📝 {f_line}")
+
+        elif tag == 'delete':
+            for i in range(i1, i2):
+                left_display.append(f"➕ {clip_lines[i]}")
+        elif tag == 'insert':
+            for j in range(j1, j2):
+                right_display.append(f"📄 {file_lines[j]}")
+
+    return "\n".join(left_display), "\n".join(right_display)
 
 
 def update_path():
@@ -225,14 +324,13 @@ with tab2:
                         st.balloons()
                     else:
                         status.update(label="❌ Deploy Failed", state="error")
-
 # main.py
-
+# main.py
+# main.py
 with tab3:
     with st.container(border=True):
         st.markdown("**📂 Project Location**")
         c_path, c_f, c_v = st.columns([3, 0.5, 0.5])
-
         with c_path:
             st.session_state.folder_path = st.text_input(
                 "Path", value=st.session_state.folder_path,
@@ -253,7 +351,7 @@ with tab3:
 
     st.divider()
 
-    if st.button("📥 Paste & Review Clipboard", use_container_width=True, type="secondary"):
+    if st.button("📥 Paste & Deep Analyze", use_container_width=True, type="secondary"):
         import pyperclip
         raw_content = pyperclip.paste()
         if raw_content:
@@ -271,6 +369,7 @@ with tab3:
                 fname = match.group(1)
                 f_found = False
                 full_p = os.path.join(st.session_state.folder_path, fname)
+                existing_lines = []
 
                 for r, d, files in os.walk(st.session_state.folder_path):
                     if any(part.startswith('.') for part in r.split(os.sep)):
@@ -280,40 +379,82 @@ with tab3:
                             f_found = True
                             full_p = os.path.join(r, f)
                             fname = f
+                            try:
+                                with open(full_p, 'r', encoding='utf-8') as ef:
+                                    existing_lines = ef.readlines()
+                            except:
+                                existing_lines = []
                             break
                     if f_found:
                         break
 
-                # --- BAGIAN ATAS: STATUS & TOMBOL ---
-                st.info(
-                    f"📍 **Target:** `{fname}` | **Status:** {'✅ Found' if f_found else '🆕 New File'}")
+                content_body = lines[1:] if len(lines) > 1 else []
+                new_code_str = "\n".join(content_body).strip()
 
-                col1, col2 = st.columns(2)
+                start_idx, end_idx = find_precise_block_range(
+                    existing_lines, content_body)
+
+                if start_idx != -1:
+                    st.warning(
+                        f"🎯 **Block Match:** Terdeteksi pada baris {start_idx+1} - {end_idx+1}")
+                else:
+                    st.info(
+                        "ℹ️ **Unique Code:** Tidak ada blok yang persis sama terdeteksi.")
+
+                st.markdown("---")
+                col1, col2, col3, col4 = st.columns(4)
+                from editor_logic import write_to_file, open_vscode_at_file
+
                 with col1:
-                    if st.button("✅ Apply Changes", use_container_width=True, type="primary"):
-                        from editor_logic import write_to_file, open_vscode_at_file
-                        body_lines = lines[1:] if len(
-                            lines) > 1 else [lines[0]]
-                        clean_body = "\n".join(body_lines).strip()
-
-                        if write_to_file(full_p, clean_body):
-                            st.toast(f"Success: {fname}")
+                    is_fix_disabled = start_idx == -1
+                    if st.button("🛠️ Perbaiki Block", use_container_width=True, type="primary", disabled=is_fix_disabled):
+                        before = existing_lines[:start_idx]
+                        after = existing_lines[end_idx + 1:]
+                        final_output = "".join(
+                            before) + new_code_str + "\n" + "".join(after)
+                        if write_to_file(full_p, final_output):
+                            st.toast(f"Block Replaced: {fname}")
                             open_vscode_at_file(full_p)
                             st.session_state.staged_content = None
                             st.rerun()
+
                 with col2:
+                    is_add_disabled = start_idx == -1
+                    if st.button("➕ Sisipkan", use_container_width=True, disabled=is_add_disabled):
+                        before = existing_lines[:start_idx]
+                        remainder = existing_lines[start_idx:]
+                        final_output = "".join(
+                            before) + new_code_str + "\n\n" + "".join(remainder)
+                        if write_to_file(full_p, final_output):
+                            st.toast(f"Inserted & Shifted: {fname}")
+                            open_vscode_at_file(full_p)
+                            st.session_state.staged_content = None
+                            st.rerun()
+
+                with col3:
+                    if st.button("📝 Ubah Full", use_container_width=True):
+                        if write_to_file(full_p, new_code_str):
+                            st.toast(f"File Overwritten: {fname}")
+                            open_vscode_at_file(full_p)
+                            st.session_state.staged_content = None
+                            st.rerun()
+
+                with col4:
                     if st.button("❌ Discard", use_container_width=True):
                         st.session_state.staged_content = None
                         st.rerun()
 
-                # --- BAGIAN BAWAH: CLIPBOARD PREVIEW ---
-                st.markdown("### 📋 Clipboard Preview")
-                with st.container(border=True):
-                    st.code(st.session_state.staged_content)
+                st.markdown("---")
+                cl, cr = st.columns(2)
+                with cl:
+                    st.caption("📋 New Content")
+                    st.code(new_code_str, language=fname.split('.')[-1])
+                with cr:
+                    st.caption("📄 Original File")
+                    st.code("".join(existing_lines),
+                            language=fname.split('.')[-1])
             else:
-                st.error("Nama file tidak terdeteksi di baris pertama!")
-                if st.button("Clear"):
-                    st.session_state.staged_content = None
-                    st.rerun()
+                st.error("Nama file tidak valid di baris pertama clipboard!")
     else:
-        st.caption("Klik tombol di atas untuk memproses kode.")
+        st.caption(
+            "Gunakan tombol Paste untuk menganalisis kode secara otomatis.")
