@@ -4,7 +4,7 @@ import os
 
 
 def run_streamlit():
-    script_path = r"C:\Users\danie\Downloads\Project Streamlit\DevT\main.py"
+    script_path = "main.py"
 
     if not os.path.exists(script_path):
         print(f"Error: {script_path} tidak ditemukan!")
