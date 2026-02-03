@@ -1,24 +1,29 @@
 import streamlit as st
 import os
+import re
+import time
+import pyperclip
+import json
 from build_logic import create_react_vite, create_python_project
 from deploy_logic import push_to_github, check_git_status
-import re
+from editor_logic import open_folder_in_vscode, open_vscode_at_file, write_to_file
 
 st.set_page_config(page_title="DevStack", page_icon="⚡", layout="centered")
+
+
+def update_path():
+    path = browse_folder()
+    if path:
+        st.session_state.folder_path = path
+        st.session_state.path_ver += 1
+    else:
+        st.warning(
+            "Folder picker tidak tersedia di lingkungan ini. Silakan ketik path manual.")
 
 
 def clean_ansi(text):
     ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
     return ansi_escape.sub('', text)
-
-
-def browse_folder():
-    root = tk.Tk()
-    root.withdraw()
-    root.attributes('-topmost', True)
-    path = filedialog.askdirectory(master=root)
-    root.destroy()
-    return path
 
 
 def browse_folder():
@@ -31,7 +36,7 @@ def browse_folder():
         path = filedialog.askdirectory(master=root)
         root.destroy()
         return path
-    except:
+    except Exception:
         return None
 
 
@@ -221,30 +226,94 @@ with tab2:
                     else:
                         status.update(label="❌ Deploy Failed", state="error")
 
+# main.py
+
 with tab3:
     with st.container(border=True):
-        st.markdown("**Quick Open VS Code**")
-        st.info("Pilih folder project untuk langsung membukanya di VS Code.")
+        st.markdown("**📂 Project Location**")
+        c_path, c_f, c_v = st.columns([3, 0.5, 0.5])
 
-        ce_path, ce_btn = st.columns([4, 1])
-        with ce_path:
+        with c_path:
             st.session_state.folder_path = st.text_input(
-                "Path Edit",
-                value=st.session_state.folder_path,
-                label_visibility="collapsed",
-                key=f"path_e_{st.session_state.path_ver}"
+                "Path", value=st.session_state.folder_path,
+                label_visibility="collapsed", key=f"p_edit_{st.session_state.path_ver}"
             )
-        with ce_btn:
-            if st.button("📁", key="btn_e_browse"):
-                update_path()
-                st.rerun()
+        with c_f:
+            if st.button("📁", key="f_btn"):
+                path = browse_folder()
+                if path:
+                    st.session_state.folder_path = path
+                    st.session_state.path_ver += 1
+                    st.rerun()
+        with c_v:
+            if st.button("🚀", key="v_btn"):
+                if os.path.exists(st.session_state.folder_path):
+                    from editor_logic import open_folder_in_vscode
+                    open_folder_in_vscode(st.session_state.folder_path)
 
-        if st.button("🚀 Open in VS Code", type="primary", use_container_width=True):
-            if os.path.exists(st.session_state.folder_path):
-                import subprocess
-                subprocess.Popen(f'code .', shell=True,
-                                 cwd=st.session_state.folder_path)
-                st.toast(
-                    f"Opening {os.path.basename(st.session_state.folder_path)}...")
+    st.divider()
+
+    if st.button("📥 Paste & Review Clipboard", use_container_width=True, type="secondary"):
+        import pyperclip
+        raw_content = pyperclip.paste()
+        if raw_content:
+            st.session_state.staged_content = raw_content.replace('\r\n', '\n')
+            st.rerun()
+
+    if "staged_content" in st.session_state and st.session_state.staged_content:
+        lines = st.session_state.staged_content.split('\n')
+        if lines:
+            first_line = lines[0].strip()
+            pattern = r'([\w\d\.-]+\.(tsx|jsx|ts|js|py|html|css|json|md))'
+            match = re.search(pattern, first_line, re.IGNORECASE)
+
+            if match:
+                fname = match.group(1)
+                f_found = False
+                full_p = os.path.join(st.session_state.folder_path, fname)
+
+                for r, d, files in os.walk(st.session_state.folder_path):
+                    if any(part.startswith('.') for part in r.split(os.sep)):
+                        continue
+                    for f in files:
+                        if f.lower() == fname.lower():
+                            f_found = True
+                            full_p = os.path.join(r, f)
+                            fname = f
+                            break
+                    if f_found:
+                        break
+
+                # --- BAGIAN ATAS: STATUS & TOMBOL ---
+                st.info(
+                    f"📍 **Target:** `{fname}` | **Status:** {'✅ Found' if f_found else '🆕 New File'}")
+
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("✅ Apply Changes", use_container_width=True, type="primary"):
+                        from editor_logic import write_to_file, open_vscode_at_file
+                        body_lines = lines[1:] if len(
+                            lines) > 1 else [lines[0]]
+                        clean_body = "\n".join(body_lines).strip()
+
+                        if write_to_file(full_p, clean_body):
+                            st.toast(f"Success: {fname}")
+                            open_vscode_at_file(full_p)
+                            st.session_state.staged_content = None
+                            st.rerun()
+                with col2:
+                    if st.button("❌ Discard", use_container_width=True):
+                        st.session_state.staged_content = None
+                        st.rerun()
+
+                # --- BAGIAN BAWAH: CLIPBOARD PREVIEW ---
+                st.markdown("### 📋 Clipboard Preview")
+                with st.container(border=True):
+                    st.code(st.session_state.staged_content)
             else:
-                st.error("Path tidak valid.")
+                st.error("Nama file tidak terdeteksi di baris pertama!")
+                if st.button("Clear"):
+                    st.session_state.staged_content = None
+                    st.rerun()
+    else:
+        st.caption("Klik tombol di atas untuk memproses kode.")
