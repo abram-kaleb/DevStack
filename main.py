@@ -2,8 +2,6 @@ import streamlit as st
 import os
 from build_logic import create_react_vite, create_python_project
 from deploy_logic import push_to_github, check_git_status
-import tkinter as tk
-from tkinter import filedialog
 import re
 
 st.set_page_config(page_title="DevStack", page_icon="⚡", layout="centered")
@@ -23,6 +21,20 @@ def browse_folder():
     return path
 
 
+def browse_folder():
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes('-topmost', True)
+        path = filedialog.askdirectory(master=root)
+        root.destroy()
+        return path
+    except:
+        return None
+
+
 if "folder_path" not in st.session_state:
     st.session_state.folder_path = os.getcwd()
 
@@ -35,6 +47,9 @@ def update_path():
     if path:
         st.session_state.folder_path = path
         st.session_state.path_ver += 1
+    else:
+        st.warning(
+            "Folder picker tidak tersedia di lingkungan ini. Silakan ketik path manual.")
 
 
 st.title("⚡ DevStack")
