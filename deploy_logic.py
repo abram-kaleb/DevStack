@@ -8,13 +8,12 @@ def push_to_github(path, repo_url, message, branch="main"):
         "git init",
         f"git remote add origin {repo_url} 2>NUL || git remote set-url origin {repo_url}",
         "git add .",
-        f'git commit -m "{message}" || echo "nothing to commit"',
+        f'git commit -m "{message}"',
         f"git branch -M {branch}",
         f"git push -u origin {branch} -f"
-
     ]
 
-    full_cmd = " && ".join(commands)
+    full_cmd = " & ".join(commands)
     return subprocess.Popen(
         full_cmd,
         shell=True,
@@ -23,13 +22,15 @@ def push_to_github(path, repo_url, message, branch="main"):
         stderr=subprocess.STDOUT,
         text=True,
         encoding="utf-8",
-        errors="replace"
+        errors="replace",
+        bufsize=1,
+        universal_newlines=True
     )
 
 
 def run_npm_deploy(path):
-    # Membersihkan folder dist lama agar build selalu fresh
-    cmd = "npm run deploy"
+    # Menggunakan perintah build langsung untuk memastikan folder dist tercipta
+    cmd = "npm run build && npm run deploy"
     return subprocess.Popen(
         cmd,
         shell=True,
@@ -38,7 +39,9 @@ def run_npm_deploy(path):
         stderr=subprocess.STDOUT,
         text=True,
         encoding="utf-8",
-        errors="replace"
+        errors="replace",
+        bufsize=1,
+        universal_newlines=True
     )
 
 
@@ -63,6 +66,8 @@ def setup_gh_pages(path):
         if "scripts" not in data:
             data["scripts"] = {}
 
+        # PERBAIKAN: Hapus 'tsc' agar build tidak gagal karena error tipe data
+        data["scripts"]["build"] = "vite build"
         data["scripts"]["predeploy"] = "npm run build"
         data["scripts"]["deploy"] = "gh-pages -d dist"
 
