@@ -1,3 +1,10 @@
+from editor_logic import (
+    write_to_file,
+    open_folder_in_vscode,
+    open_vscode_at_file,
+    find_precise_block_range
+)
+import subprocess
 import streamlit as st
 import os
 import re
@@ -330,29 +337,71 @@ with tab2:
 with tab3:
     with st.container(border=True):
         st.markdown("**📂 Project Location**")
-        c_path, c_f, c_v = st.columns([3, 0.5, 0.5])
+        c_path, c_f, c_v, c_run = st.columns([2.5, 0.5, 0.5, 0.5])
+
         with c_path:
             st.session_state.folder_path = st.text_input(
                 "Path", value=st.session_state.folder_path,
                 label_visibility="collapsed", key=f"p_edit_{st.session_state.path_ver}"
             )
         with c_f:
-            if st.button("📁", key="f_btn"):
+            if st.button("📁", key="f_btn", help="Browse Folder"):
                 path = browse_folder()
                 if path:
                     st.session_state.folder_path = path
                     st.session_state.path_ver += 1
                     st.rerun()
         with c_v:
-            if st.button("🚀", key="v_btn"):
+            if st.button("🚀", key="v_btn", help="Open in VSCode"):
                 if os.path.exists(st.session_state.folder_path):
-                    from editor_logic import open_folder_in_vscode
                     open_folder_in_vscode(st.session_state.folder_path)
+
+        with c_run:
+            if st.button("⚡", key="run_top_btn", help="Run Project"):
+                if os.path.exists(st.session_state.folder_path):
+                    files = os.listdir(st.session_state.folder_path)
+                    cmd = ""
+
+                    # Logika deteksi jenis proyek berdasarkan file di folder
+                    if "package.json" in files:
+                        # Cek apakah vite/next (tsx) atau react biasa
+                        try:
+                            with open(os.path.join(st.session_state.folder_path, "package.json"), "r") as f:
+                                pkg = f.read()
+                                if "vite" in pkg or "next" in pkg:
+                                    cmd = "npm run dev"
+                                else:
+                                    cmd = "npm start"
+                        except:
+                            cmd = "npm start"
+
+                    elif "app.py" in files:
+                        try:
+                            with open(os.path.join(st.session_state.folder_path, "app.py"), "r") as f:
+                                if "import streamlit" in f.read():
+                                    cmd = "streamlit run app.py"
+                                else:
+                                    cmd = "python app.py"
+                        except:
+                            cmd = "python app.py"
+
+                    elif "main.py" in files:
+                        cmd = "python main.py"
+                    elif "index.js" in files:
+                        cmd = "node index.js"
+                    elif "index.ts" in files:
+                        cmd = "ts-node index.ts"
+
+                    if cmd:
+                        subprocess.Popen(
+                            ["start", "cmd", "/k", cmd], cwd=st.session_state.folder_path, shell=True)
+                    else:
+                        st.error(
+                            "Project type not recognized (main.py, app.py, or package.json not found).")
 
     st.divider()
 
-    if st.button("📥 Paste & Deep Analyze", use_container_width=True, type="secondary"):
-        import pyperclip
+    if st.button("📥 Paste & Analyze", use_container_width=True, type="secondary"):
         raw_content = pyperclip.paste()
         if raw_content:
             st.session_state.staged_content = raw_content.replace('\r\n', '\n')
@@ -390,71 +439,69 @@ with tab3:
 
                 content_body = lines[1:] if len(lines) > 1 else []
                 new_code_str = "\n".join(content_body).strip()
-
                 start_idx, end_idx = find_precise_block_range(
                     existing_lines, content_body)
 
                 if start_idx != -1:
                     st.warning(
-                        f"🎯 **Block Match:** Terdeteksi pada baris {start_idx+1} - {end_idx+1}")
+                        f"🎯 **Block Match:** Baris {start_idx+1} - {end_idx+1}")
                 else:
                     st.info(
-                        "ℹ️ **Unique Code:** Tidak ada blok yang persis sama terdeteksi.")
+                        "ℹ️ **No Match:** Kode akan ditambahkan ke bagian akhir file.")
 
                 st.markdown("---")
                 col1, col2, col3, col4 = st.columns(4)
-                from editor_logic import write_to_file, open_vscode_at_file
 
                 with col1:
-                    is_fix_disabled = start_idx == -1
-                    if st.button("🛠️ Perbaiki Block", use_container_width=True, type="primary", disabled=is_fix_disabled):
+                    if st.button("🛠️ Perbaiki", use_container_width=True, type="primary", disabled=(start_idx == -1)):
                         before = existing_lines[:start_idx]
                         after = existing_lines[end_idx + 1:]
                         final_output = "".join(
                             before) + new_code_str + "\n" + "".join(after)
                         if write_to_file(full_p, final_output):
-                            st.toast(f"Block Replaced: {fname}")
-                            open_vscode_at_file(full_p)
+                            st.toast(f"Updated: {fname}")
                             st.session_state.staged_content = None
                             st.rerun()
 
                 with col2:
-                    is_add_disabled = start_idx == -1
-                    if st.button("➕ Sisipkan", use_container_width=True, disabled=is_add_disabled):
-                        before = existing_lines[:start_idx]
-                        remainder = existing_lines[start_idx:]
-                        final_output = "".join(
-                            before) + new_code_str + "\n\n" + "".join(remainder)
+                    if st.button("➕ Sisipkan", use_container_width=True):
+                        if start_idx != -1:
+                            before = existing_lines[:start_idx]
+                            remainder = existing_lines[start_idx:]
+                            final_output = "".join(
+                                before) + new_code_str + "\n\n" + "".join(remainder)
+                        else:
+                            existing_full = "".join(existing_lines)
+                            final_output = existing_full.rstrip() + "\n\n" + \
+                                new_code_str if f_found else new_code_str
+
                         if write_to_file(full_p, final_output):
-                            st.toast(f"Inserted & Shifted: {fname}")
-                            open_vscode_at_file(full_p)
+                            st.toast(f"Inserted: {fname}")
                             st.session_state.staged_content = None
                             st.rerun()
 
                 with col3:
-                    if st.button("📝 Ubah Full", use_container_width=True):
+                    if st.button("📝 Full", use_container_width=True):
                         if write_to_file(full_p, new_code_str):
-                            st.toast(f"File Overwritten: {fname}")
-                            open_vscode_at_file(full_p)
+                            st.toast(f"Overwritten: {fname}")
                             st.session_state.staged_content = None
                             st.rerun()
 
                 with col4:
-                    if st.button("❌ Discard", use_container_width=True):
+                    if st.button("❌ Batal", use_container_width=True):
                         st.session_state.staged_content = None
                         st.rerun()
 
                 st.markdown("---")
                 cl, cr = st.columns(2)
                 with cl:
-                    st.caption("📋 New Content")
+                    st.caption("📋 New")
                     st.code(new_code_str, language=fname.split('.')[-1])
                 with cr:
-                    st.caption("📄 Original File")
+                    st.caption("📄 Original")
                     st.code("".join(existing_lines),
                             language=fname.split('.')[-1])
             else:
-                st.error("Nama file tidak valid di baris pertama clipboard!")
+                st.error("Filename mismatch!")
     else:
-        st.caption(
-            "Gunakan tombol Paste untuk menganalisis kode secara otomatis.")
+        st.caption("Ready to analyze.")
