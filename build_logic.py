@@ -3,6 +3,9 @@ import os
 
 
 def create_react_vite(path, project_name, lang):
+    if not os.path.isdir(path):
+        path = os.path.dirname(path)
+
     template = "react-ts" if lang == "TypeScript" else "react"
     project_dir = os.path.join(path, project_name)
 
@@ -10,13 +13,28 @@ def create_react_vite(path, project_name, lang):
     env["NO_COLOR"] = "1"
     env["CI"] = "true"
 
-    # Perintah: Buat, Install, Buka VS Code, lalu jalankan Dev Server di terminal baru
     cmd = (
         f'echo | npx create-vite@latest {project_name} --template {template} && '
         f'cd /d "{project_dir}" && '
         f'npm install && '
+        f'npm install tailwindcss @tailwindcss/vite && '
+        f'echo @import "tailwindcss"; > src/index.css && '
+        f'echo @import "tailwindcss"; > src/App.css && '
         f'code . && '
         f'start cmd /k "npm run dev"'
+    )
+
+    return subprocess.Popen(
+        cmd,
+        shell=True,
+        cwd=path,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        stdin=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=env
     )
 
     return subprocess.Popen(

@@ -414,94 +414,99 @@ with tab3:
             pattern = r'([\w\d\.-]+\.(tsx|jsx|ts|js|py|html|css|json|md))'
             match = re.search(pattern, first_line, re.IGNORECASE)
 
-            if match:
-                fname = match.group(1)
-                f_found = False
-                full_p = os.path.join(st.session_state.folder_path, fname)
-                existing_lines = []
+        if match:
+            fname = match.group(1)
+            f_found = False
+            full_p = os.path.join(st.session_state.folder_path, fname)
+            existing_lines = []
 
-                for r, d, files in os.walk(st.session_state.folder_path):
-                    if any(part.startswith('.') for part in r.split(os.sep)):
-                        continue
-                    for f in files:
-                        if f.lower() == fname.lower():
-                            f_found = True
-                            full_p = os.path.join(r, f)
-                            fname = f
-                            try:
-                                with open(full_p, 'r', encoding='utf-8') as ef:
-                                    existing_lines = ef.readlines()
-                            except:
-                                existing_lines = []
-                            break
-                    if f_found:
+            for r, d, files in os.walk(st.session_state.folder_path):
+                if any(part.startswith('.') for part in r.split(os.sep)):
+                    continue
+                for f in files:
+                    if f.lower() == fname.lower():
+                        f_found = True
+                        full_p = os.path.join(r, f)
+                        fname = f
+                        try:
+                            with open(full_p, 'r', encoding='utf-8') as ef:
+                                existing_lines = ef.readlines()
+                        except:
+                            existing_lines = []
                         break
+                if f_found:
+                    break
 
-                content_body = lines[1:] if len(lines) > 1 else []
-                new_code_str = "\n".join(content_body).strip()
-                start_idx, end_idx = find_precise_block_range(
-                    existing_lines, content_body)
+            if not f_found:
+                target_dir = os.path.dirname(full_p)
+                if not os.path.exists(target_dir):
+                    os.makedirs(target_dir)
 
-                if start_idx != -1:
-                    st.warning(
-                        f"🎯 **Block Match:** Baris {start_idx+1} - {end_idx+1}")
-                else:
-                    st.info(
-                        "ℹ️ **No Match:** Kode akan ditambahkan ke bagian akhir file.")
+            content_body = lines[1:] if len(lines) > 1 else []
+            new_code_str = "\n".join(content_body).strip()
+            start_idx, end_idx = find_precise_block_range(
+                existing_lines, content_body)
 
-                st.markdown("---")
-                col1, col2, col3, col4 = st.columns(4)
+            if start_idx != -1:
+                st.warning(
+                    f"🎯 **Block Match:** Baris {start_idx+1} - {end_idx+1}")
+            else:
+                st.info(
+                    "ℹ️ **No Match:** Kode akan ditambahkan ke bagian akhir file.")
 
-                with col1:
-                    if st.button("🛠️ Perbaiki", use_container_width=True, type="primary", disabled=(start_idx == -1)):
-                        before = existing_lines[:start_idx]
-                        after = existing_lines[end_idx + 1:]
-                        final_output = "".join(
-                            before) + new_code_str + "\n" + "".join(after)
-                        if write_to_file(full_p, final_output):
-                            st.toast(f"Updated: {fname}")
-                            st.session_state.staged_content = None
-                            st.rerun()
+            st.markdown("---")
+            col1, col2, col3, col4 = st.columns(4)
 
-                with col2:
-                    if st.button("➕ Sisipkan", use_container_width=True):
-                        if start_idx != -1:
-                            before = existing_lines[:start_idx]
-                            remainder = existing_lines[start_idx:]
-                            final_output = "".join(
-                                before) + new_code_str + "\n\n" + "".join(remainder)
-                        else:
-                            existing_full = "".join(existing_lines)
-                            final_output = existing_full.rstrip() + "\n\n" + \
-                                new_code_str if f_found else new_code_str
-
-                        if write_to_file(full_p, final_output):
-                            st.toast(f"Inserted: {fname}")
-                            st.session_state.staged_content = None
-                            st.rerun()
-
-                with col3:
-                    if st.button("📝 Full", use_container_width=True):
-                        if write_to_file(full_p, new_code_str):
-                            st.toast(f"Overwritten: {fname}")
-                            st.session_state.staged_content = None
-                            st.rerun()
-
-                with col4:
-                    if st.button("❌ Batal", use_container_width=True):
+            with col1:
+                if st.button("🛠️ Perbaiki", use_container_width=True, type="primary", disabled=(start_idx == -1)):
+                    before = existing_lines[:start_idx]
+                    after = existing_lines[end_idx + 1:]
+                    final_output = "".join(
+                        before) + new_code_str + "\n" + "".join(after)
+                    if write_to_file(full_p, final_output):
+                        st.toast(f"Updated: {fname}")
                         st.session_state.staged_content = None
                         st.rerun()
 
-                st.markdown("---")
-                cl, cr = st.columns(2)
-                with cl:
-                    st.caption("📋 New")
-                    st.code(new_code_str, language=fname.split('.')[-1])
-                with cr:
-                    st.caption("📄 Original")
-                    st.code("".join(existing_lines),
-                            language=fname.split('.')[-1])
-            else:
-                st.error("Filename mismatch!")
+            with col2:
+                if st.button("➕ Sisipkan", use_container_width=True):
+                    if start_idx != -1:
+                        before = existing_lines[:start_idx]
+                        remainder = existing_lines[start_idx:]
+                        final_output = "".join(
+                            before) + new_code_str + "\n\n" + "".join(remainder)
+                    else:
+                        existing_full = "".join(existing_lines)
+                        final_output = existing_full.rstrip() + "\n\n" + \
+                            new_code_str if f_found else new_code_str
+
+                    if write_to_file(full_p, final_output):
+                        st.toast(f"Inserted: {fname}")
+                        st.session_state.staged_content = None
+                        st.rerun()
+
+            with col3:
+                if st.button("📝 Full", use_container_width=True):
+                    if write_to_file(full_p, new_code_str):
+                        st.toast(f"Overwritten: {fname}")
+                        st.session_state.staged_content = None
+                        st.rerun()
+
+            with col4:
+                if st.button("❌ Batal", use_container_width=True):
+                    st.session_state.staged_content = None
+                    st.rerun()
+
+            st.markdown("---")
+            cl, cr = st.columns(2)
+            with cl:
+                st.caption("📋 New")
+                st.code(new_code_str, language=fname.split('.')[-1])
+            with cr:
+                st.caption("📄 Original")
+                st.code("".join(existing_lines),
+                        language=fname.split('.')[-1])
+        else:
+            st.error("Filename mismatch!")
     else:
         st.caption("Ready to analyze.")
